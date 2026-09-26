@@ -9,7 +9,7 @@ Python veya ek bir kurulumla uğraşmanıza gerek yok! Doğrudan .exe dosyasın�
 👉 tbrowser v0.4 İndir (Google Drive):https://drive.google.com/file/d/1qQCkOvrRkCshr2sYBmuoAlD1MQuqOAFv/view?usp=sharing
 
 ✨ Öne Çıkan Özellikler
-🛡️ Dahili Reklam & Takipçi Engelleyici: Ağ seviyesinde entegre engelleme sistemi sayesinde reklamlarla boğuşmadan hızlı sörf.
+🛡️ Dahili Reklam & Takipçi Engelleyici: Ağ seviyesinde entegre engelleme sistemi sayesinde reklamlarla boğuşmadan hızlı gezinti.
 
 🍪 Gelişmiş Çerez Yönetimi: Web sitelerinin çerez izinlerini kolayca kontrol altında tutun.
 
