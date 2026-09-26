@@ -26,6 +26,6 @@ tbrowser henüz gelişme aşamasında bir projedir. Tarayıcıyı denerken karş
 
 📬 Görüş, öneri ve hata bildirimleriniz için:
 
-✉️ E-posta: eraykonu1234@gmail.com
+✉️ E-posta: eraykonur1234@gmail.com
 
 Geri bildirimleriniz sonraki sürümlerin şekillenmesinde doğrudan rol oynayacaktır. Şimdiden vakit ayırıp denediğiniz ve destek olduğunuz için teşekkürler!
