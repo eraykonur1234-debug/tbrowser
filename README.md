@@ -6,7 +6,8 @@ tbrowser, Chromium alt yapısının gücünü minimalist bir arayüzle buluştur
  Hemen İndirin ve Deneyin!
 Python veya ek bir kurulumla uğraşmanıza gerek yok! Doğrudan .exe dosyasını indirip çalıştırmanız yeterlidir:
 
- tbrowser v0.4 İndir (Google Drive):https://drive.google.com/file/d/1qQCkOvrRkCshr2sYBmuoAlD1MQuqOAFv/view?usp=sharing
+ tbrowser v0.4 İndir (Google Drive): https://drive.google.com/file/d/1qQCkOvrRkCshr2sYBmuoAlD1MQuqOAFv/view?usp=sharing
+ tbrowser v0.6 İndir (Google Drive): https://drive.google.com/file/d/1zJcOAIcxLOJ19vdZz3IXIv74Xxj8X5XP/view?usp=sharing
 
  Öne Çıkan Özellikler
  Dahili Reklam & Takipçi Engelleyici: Ağ seviyesinde entegre engelleme sistemi sayesinde reklamlarla boğuşmadan hızlı gezinti.
