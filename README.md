@@ -1,5 +1,5 @@
 tbrowser (v0.4)
-Türkler için geliştirilmiş; hızlı, hafif ve gizlilik odaklı masaüstü web tarayıcısı!
+Türkler tarafından geliştirilmiş; hızlı, hafif ve gizlilik odaklı masaüstü web tarayıcısı!
 
 tbrowser, Chromium alt yapısının gücünü minimalist bir arayüzle buluşturarak internette reklamsız ve özgürce gezinmenizi sağlar.
 
