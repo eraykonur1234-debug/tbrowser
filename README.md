@@ -10,6 +10,8 @@ Python veya ek bir kurulumla uğraşmanıza gerek yok! Doğrudan .exe dosyasın�
  
  tbrowser v0.6 İndir (Google Drive): https://drive.google.com/file/d/1zJcOAIcxLOJ19vdZz3IXIv74Xxj8X5XP/view?usp=sharing
 
+ tbrowser v0.7 İndir (Google Drive) : https://drive.google.com/file/d/1_Fv-mHjWyYbXfWcQ6FRLGMfKyo9SBh_Y/view?usp=sharing
+
  Öne Çıkan Özellikler
  Dahili Reklam & Takipçi Engelleyici: Ağ seviyesinde entegre engelleme sistemi sayesinde reklamlarla boğuşmadan hızlı gezinti.
 Gelişmiş Çerez Yönetimi: Web sitelerinin çerez izinlerini kolayca kontrol altında tutun.
