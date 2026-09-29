@@ -3,6 +3,9 @@ Türkler tarafından geliştirilmiş; hızlı, hafif ve gizlilik odaklı masaüs
 
 tbrowser, Chromium alt yapısının gücünü minimalist bir arayüzle buluşturarak internette reklamsız ve özgürce gezinmenizi sağlar.
 
+<img width="1515" height="872" alt="image" src="https://github.com/user-attachments/assets/2bf52ac9-78ee-47e5-abea-403ba9897c0c" />
+
+
  Hemen İndirin ve Deneyin!
 Python veya ek bir kurulumla uğraşmanıza gerek yok! Doğrudan .exe dosyasını indirip çalıştırmanız yeterlidir:
 
