@@ -19,7 +19,7 @@ Python veya ek bir kurulumla uğraşmanıza gerek yok! Doğrudan .exe dosyasın�
  Dahili Reklam & Takipçi Engelleyici: Ağ seviyesinde entegre engelleme sistemi sayesinde reklamlarla boğuşmadan hızlı gezinti.
 Gelişmiş Çerez Yönetimi: Web sitelerinin çerez izinlerini kolayca kontrol altında tutun.
 
- Modern Koyu Tema: Göz yormayan Catppuccin tarzı estetik koyu arayüz.
+ Modern Koyu Tema: Göz yormayan estetik koyu arayüz.
 
  Çoklu Sekme Desteği: Sekmeler arasında takılmadan ve kolayca geçiş yapın.
 
