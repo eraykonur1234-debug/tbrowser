@@ -1,0 +1,111 @@
+name: Derleme
+
+# Her push'ta tbrowser'i Windows ve Linux icin PyInstaller ile derler.
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  derle:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-22.04]
+    defaults:
+      run:
+        shell: bash
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PYTHONUTF8: "1"
+      QTWEBENGINE_DISABLE_SANDBOX: "1"
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Linux sistem kutuphaneleri
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q xvfb libegl1 libgl1 libopengl0 libxkbcommon0 \
+            libxkbcommon-x11-0 libdbus-1-3 libnss3 libasound2 libxcomposite1 libxdamage1 \
+            libxrandr2 libxtst6 libxkbfile1 libgbm1 libxcb-cursor0 libxcb-icccm4 \
+            libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-shape0 \
+            libxcb-xinerama0 libxcb-xkb1 libxcb-randr0 libxcb-xfixes0 libxcb-sync1 \
+            libxcb-shm0 libxcb-render0 libfontconfig1 fonts-dejavu-core
+
+      - name: Ekran cozunurlugu (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        continue-on-error: true
+        run: Set-DisplayResolution -Width 1920 -Height 1080 -Force
+
+      - name: Python paketleri
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install PyQt6 PyQt6-WebEngine pyinstaller
+          python -m pip freeze | tee paketler.txt
+
+      - name: PyInstaller ile derle
+        run: |
+          pyinstaller --noconfirm --windowed --name tbrowser main7.py 2>&1 | tee derleme.log
+          {
+            echo "=== boyut ==="; du -sh dist/tbrowser
+            echo "=== ust dizin ==="; ls -la dist/tbrowser | head -50
+            echo "=== _internal ==="; ls dist/tbrowser/_internal | head -80
+            echo "=== en buyuk dosyalar ==="; find dist/tbrowser -type f -printf '%s %p\n' | sort -rn | head -40
+          } > dagitim.txt 2>&1 || true
+
+      - name: Calistirma denemesi
+        run: |
+          cat > ekran.py <<'PY'
+          import sys
+          from PyQt6.QtWidgets import QApplication
+          app = QApplication(sys.argv)
+          s = app.primaryScreen()
+          print("ekran", s.size().width(), s.size().height(), s.devicePixelRatio())
+          print("kaydedildi", s.grabWindow(0).save(sys.argv[1]))
+          PY
+          cat > calistir.sh <<'SH'
+          if [ "$RUNNER_OS" = "Windows" ]; then EXE=dist/tbrowser/tbrowser.exe; else EXE=dist/tbrowser/tbrowser; fi
+          "$EXE" > calisma.log 2>&1 &
+          PID=$!
+          sleep 35
+          if kill -0 $PID 2>/dev/null; then echo "CALISIYOR" > durum.txt; else echo "KAPANDI" > durum.txt; fi
+          python ekran.py ekran.png >> durum.txt 2>&1 || true
+          kill $PID 2>/dev/null || true
+          cat durum.txt
+          SH
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            xvfb-run -a -s "-screen 0 1600x900x24" bash calistir.sh
+          else
+            bash calistir.sh
+          fi
+          echo "::notice title=durum ${{ matrix.os }}::$(tr '\n' ' ' < durum.txt)"
+
+      - name: Tani dosyalarini yukle
+        if: always()
+        run: |
+          cat > yukle.py <<'PY'
+          import base64, json, os, sys, urllib.request
+          repo, token = os.environ["GITHUB_REPOSITORY"], os.environ["GH_TOKEN"]
+          for p in sys.argv[1:]:
+              if not os.path.exists(p):
+                  print(f"::warning title=yok::{p}")
+                  continue
+              govde = json.dumps({"content": base64.b64encode(open(p, "rb").read()).decode(), "encoding": "base64"}).encode()
+              istek = urllib.request.Request(
+                  f"https://api.github.com/repos/{repo}/git/blobs", data=govde, method="POST",
+                  headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"})
+              sha = json.load(urllib.request.urlopen(istek))["sha"]
+              print(f"::notice title=blob {p}::{sha}")
+          PY
+          python yukle.py paketler.txt derleme.log dagitim.txt calisma.log durum.txt ekran.png build/tbrowser/warn-tbrowser.txt
