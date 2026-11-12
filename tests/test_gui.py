@@ -31,7 +31,7 @@ def test_gui_pencere_ve_cerez_akisi(tmp_path):
 
     if QApplication.instance() is None:
         QApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts)
-    app = QApplication.instance() or QApplication([])
+    app = QApplication.instance() or QApplication(["tbrowser"])
     ayar_dosyasi = str(tmp_path / "ayarlar.ini")
     ayarlar = QSettings(ayar_dosyasi, QSettings.Format.IniFormat)
 
