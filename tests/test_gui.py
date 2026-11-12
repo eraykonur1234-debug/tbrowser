@@ -69,6 +69,16 @@ def test_gui_pencere_ve_cerez_akisi(tmp_path):
         assert "site1.example" in win.cerez_yoneticisi.izin_verilen
         assert "site2.example" in win.cerez_yoneticisi.engellenen
 
+        # Çerez ön filtresi kontrolü
+        class SahteReq:
+            def __init__(self, host, third_party=False):
+                self.origin = QUrl(f"https://{host}/")
+                self.thirdParty = third_party
+
+        assert win._cerez_filtresi(SahteReq("site1.example")) is True
+        assert win._cerez_filtresi(SahteReq("site2.example")) is False
+        assert win._cerez_filtresi(SahteReq("doubleclick.net", third_party=True)) is False
+
         # AdBlocker aç/kapat
         onceki = win.adblocker.aktif
         win.toggle_adblock_button()

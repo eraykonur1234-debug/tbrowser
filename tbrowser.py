@@ -58,8 +58,7 @@ except ImportError as exc:  # pragma: no cover - kurulum hatası mesajı
 
 from tbrowser_core import (
     ANA_SAYFA_URL,
-    KARAR_ENGELLE,
-    KARAR_IZIN,
+    KARAR_SOR,
     POLITIKA_ENGELLE,
     POLITIKA_IZIN_VER,
     POLITIKA_SOR,
