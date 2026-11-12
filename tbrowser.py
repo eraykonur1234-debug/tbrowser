@@ -771,6 +771,14 @@ class Tarayici(QMainWindow):
 
 
 def main(argv: list[str] | None = None) -> int:
+    for stream in (sys.stdout, sys.stderr):
+        reconf = getattr(stream, "reconfigure", None)
+        if callable(reconf):
+            try:
+                reconf(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+
     args = sys.argv[1:] if argv is None else argv
     if "--version" in args:
         print(f"{UYGULAMA_ADI} {SURUM}")
