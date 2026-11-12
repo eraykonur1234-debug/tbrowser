@@ -11,9 +11,9 @@ Kullanım:
     release/tbrowser-v1.0.0-<isletimsistemi>-<mimari>.zip — dağıtım paketi
 
 Not: PyInstaller, çalıştırıldığı işletim sisteminin ikili dosyasını
-üretir (Windows'ta .exe, Linux'ta çalıştırılabilir, macOS'ta .app
-içeren klasör). Tüm platformlar için GitHub Actions
-(.github/workflows/build.yml) otomatik derleme yapar.
+üretir (Windows'ta .exe, Linux'ta çalıştırılabilir, macOS'ta ikili dosya).
+Tüm platformlar için GitHub Actions (.github/workflows/build.yml)
+otomatik derleme yapar.
 """
 
 from __future__ import annotations
@@ -38,6 +38,27 @@ def isletimsistemi_adi() -> str:
     if s == "darwin":
         return "macos"
     return "linux"
+
+
+def arsiv_olustur(kaynak_klasor: Path, hedef_zip: Path) -> None:
+    if hedef_zip.exists():
+        hedef_zip.unlink()
+
+    # Unix'te (özellikle macOS QtWebEngineCore.framework sembolik bağları
+    # ve çalıştırma izinleri için) sistemin zip aracını kullan.
+    zip_bin = shutil.which("zip") if sys.platform != "win32" else None
+    if zip_bin:
+        sonuc = subprocess.run(
+            [zip_bin, "-ry", "-q", str(hedef_zip), kaynak_klasor.name],
+            cwd=str(kaynak_klasor.parent),
+        )
+        if sonuc.returncode == 0:
+            return
+
+    with zipfile.ZipFile(hedef_zip, "w", zipfile.ZIP_DEFLATED) as zf:
+        for dosya in kaynak_klasor.rglob("*"):
+            if dosya.is_file():
+                zf.write(dosya, dosya.relative_to(kaynak_klasor.parent))
 
 
 def main() -> int:
@@ -76,10 +97,7 @@ def main() -> int:
     release.mkdir(exist_ok=True)
     zip_adi = f"tbrowser-v{SURUM}-{isletimsistemi_adi()}-{platform.machine()}.zip"
     zip_yolu = release / zip_adi
-    with zipfile.ZipFile(zip_yolu, "w", zipfile.ZIP_DEFLATED) as zf:
-        for dosya in cikti.rglob("*"):
-            if dosya.is_file():
-                zf.write(dosya, dosya.relative_to(dist))
+    arsiv_olustur(cikti, zip_yolu)
     print(f"Dağıtım paketi hazır: {zip_yolu}")
     print("Bu zip dosyasını GitHub Releases'a yükleyebilirsiniz.")
     return 0

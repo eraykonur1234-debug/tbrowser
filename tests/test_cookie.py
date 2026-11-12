@@ -170,3 +170,43 @@ def test_temizle():
     y.temizle()
     assert y.izin_verilen == set()
     assert y.karar("a.com") == KARAR_SOR
+
+
+def test_qsettings_tek_string_ve_json_yukleme():
+    # QSettings INI/Registry tek elemanlı listeyi string olarak dönebilir
+    ayarlar = SahteAyarlar()
+    ayarlar.veriler["cookies/allowed"] = "tek-site.com"
+    ayarlar.veriler["cookies/blocked"] = '["yasak.com"]'
+    y = CerezYoneticisi(ayarlar)
+    assert y.karar("tek-site.com") == KARAR_IZIN
+    assert y.karar("yasak.com") == KARAR_ENGELLE
+
+
+def test_cerez_filtre_izni():
+    y = CerezYoneticisi()
+    store = SahteStore()
+    # Bilinmeyen site -> filtre izin verir (sonra cookieAdded ile sorulur)
+    assert y.cerez_filtre_izni("yeni.com") is True
+
+    y.cerez_eklendi(SahteCookie("yasak.com"), store)
+    y.sıradaki()
+    y.reddet(store)
+    assert y.cerez_filtre_izni("yasak.com") is False
+    assert y.cerez_filtre_izni("sub.yasak.com") is False
+
+    y.politika_ayarla(POLITIKA_IZIN_VER)
+    assert y.cerez_filtre_izni("yasak.com") is True
+    y.politika_ayarla(POLITIKA_ENGELLE)
+    assert y.cerez_filtre_izni("herhangi.com") is False
+
+
+def test_kuyrugu_bosalt_silmez():
+    y = CerezYoneticisi()
+    store = SahteStore()
+    y.cerez_eklendi(SahteCookie("a.com"), store)
+    assert y.sıradaki() == "a.com"
+    y.kuyrugu_bosalt()
+    assert store.silinenler == []
+    assert y.bekleyen_sayisi() == 0
+    assert y.su_anki_domain is None
+

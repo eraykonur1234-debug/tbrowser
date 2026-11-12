@@ -9,6 +9,8 @@ on:
 
 permissions:
   contents: write
+  issues: write
+  pull-requests: write
 
 jobs:
   test:
@@ -22,7 +24,13 @@ jobs:
       - name: Qt sistem kütüphaneleri
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgl1 libegl1 libxkbcommon-x11-0 libnss3 libgbm1 libasound2 libxcomposite1 libxdamage1 libxrandr2 libxfixes3 libpango-1.0-0 libcairo2 libx11-xcb1
+          sudo apt-get install -y \
+            libgl1 libegl1 libxkbcommon-x11-0 libxkbcommon0 libnss3 libgbm1 \
+            libasound2 libxcomposite1 libxdamage1 libxrandr2 libxfixes3 \
+            libpango-1.0-0 libcairo2 libx11-xcb1 libdbus-1-3 libxi6 libxtst6 \
+            libxcursor1 libatk1.0-0 libatk-bridge2.0-0 libcups2 libxrender1 \
+            libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 \
+            libxcb-render-util0 libxcb-shape0 libxcb-xinerama0
       - name: Bağımlılıklar
         run: |
           python -m pip install --upgrade pip
@@ -30,7 +38,28 @@ jobs:
       - name: Testleri çalıştır
         env:
           QT_QPA_PLATFORM: offscreen
-        run: pytest tests/ -v
+          QTWEBENGINE_DISABLE_SANDBOX: "1"
+          QTWEBENGINE_CHROMIUM_FLAGS: "--no-sandbox --disable-gpu"
+        run: |
+          python -m pytest tests/ -v --tb=short
+          python tbrowser.py --version
+          python tbrowser.py --smoke-test
+      - name: Hata çıktısını PR'a yorum olarak ekle
+        if: failure() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          QT_QPA_PLATFORM: offscreen
+          QTWEBENGINE_DISABLE_SANDBOX: "1"
+          QTWEBENGINE_CHROMIUM_FLAGS: "--no-sandbox --disable-gpu"
+        run: |
+          python -m pytest tests/ -v --tb=long > pytest-cikti.txt 2>&1 || true
+          {
+            echo "### CI test çıktısı (hata ayıklama)"
+            echo '```'
+            tail -n 120 pytest-cikti.txt
+            echo '```'
+          } > yorum.md
+          gh pr comment ${{ github.event.pull_request.number }} --body-file yorum.md || true
 
   build:
     name: Derle (${{ matrix.os }})
@@ -39,7 +68,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest]
+        os: [windows-latest, ubuntu-22.04, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -50,13 +79,38 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgl1 libegl1 libxkbcommon-x11-0 libnss3 libgbm1 libasound2 libxcomposite1 libxdamage1 libxrandr2 libxfixes3 libpango-1.0-0 libcairo2 libx11-xcb1
+          sudo apt-get install -y \
+            libgl1 libegl1 libxkbcommon-x11-0 libxkbcommon0 libnss3 libgbm1 \
+            libasound2 libxcomposite1 libxdamage1 libxrandr2 libxfixes3 \
+            libpango-1.0-0 libcairo2 libx11-xcb1 libdbus-1-3 libxi6 libxtst6 \
+            libxcursor1 libatk1.0-0 libatk-bridge2.0-0 libcups2 libxrender1 \
+            libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 \
+            libxcb-render-util0 libxcb-shape0 libxcb-xinerama0
       - name: Bağımlılıklar
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
       - name: Derle (PyInstaller)
         run: python build.py --clean
+      - name: Derlenen ikiliyi doğrula (Unix)
+        if: runner.os != 'Windows'
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QTWEBENGINE_DISABLE_SANDBOX: "1"
+          QTWEBENGINE_CHROMIUM_FLAGS: "--no-sandbox --disable-gpu"
+        run: |
+          ./dist/tbrowser/tbrowser --version
+          ./dist/tbrowser/tbrowser --smoke-test
+      - name: Derlenen ikiliyi doğrula (Windows)
+        if: runner.os == 'Windows'
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QTWEBENGINE_DISABLE_SANDBOX: "1"
+          QTWEBENGINE_CHROMIUM_FLAGS: "--no-sandbox --disable-gpu"
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath ".\dist\tbrowser\tbrowser.exe" -ArgumentList "--smoke-test" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { exit $p.ExitCode }
       - name: Paketi yükle (artifact)
         uses: actions/upload-artifact@v4
         with:

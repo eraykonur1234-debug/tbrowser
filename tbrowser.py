@@ -18,9 +18,11 @@ import os
 import sys
 
 try:
-    from PyQt6.QtCore import QKeySequence, QSettings, QUrl, Qt
-    from PyQt6.QtGui import QShortcut
+    from PyQt6.QtCore import QSettings, QUrl, Qt
+    from PyQt6.QtGui import QKeySequence, QShortcut
     from PyQt6.QtWebEngineCore import (
+        QWebEngineDownloadRequest,
+        QWebEnginePage,
         QWebEngineProfile,
         QWebEngineScript,
         QWebEngineUrlRequestInfo,
@@ -90,13 +92,11 @@ class AdBlocker(QWebEngineUrlRequestInterceptor):
         if not self.aktif:
             return
         # Ana çerçeve: kullanıcı doğrudan bu adrese gittiyse engelleme.
-        is_main_frame = getattr(info, "isMainFrame", None)
-        if callable(is_main_frame):
-            try:
-                if is_main_frame():
-                    return
-            except Exception:
-                pass
+        if info.resourceType() in (
+            QWebEngineUrlRequestInfo.ResourceType.ResourceTypeMainFrame,
+            QWebEngineUrlRequestInfo.ResourceType.ResourceTypeNavigationPreloadMainFrame,
+        ):
+            return
 
         url = info.requestUrl().toString()
         host = info.requestUrl().host()
@@ -113,13 +113,22 @@ class AdBlocker(QWebEngineUrlRequestInterceptor):
 class TarayiciView(QWebEngineView):
     """Yeni pencere isteklerini yeni sekme olarak açan görünüm."""
 
-    def __init__(self, ana_pencere, parent=None):
-        super().__init__(parent)
+    def __init__(
+        self,
+        ana_pencere,
+        profile: QWebEngineProfile | None = None,
+        parent=None,
+    ):
+        if profile is not None:
+            super().__init__(profile, parent)
+        else:
+            super().__init__(parent)
         self.ana_pencere = ana_pencere
 
     def createWindow(self, windowType):
-        yeni = TarayiciView(self.ana_pencere)
-        self.ana_pencere.yeni_sekme_ekle(view=yeni, aktif=False)
+        aktif = windowType != QWebEnginePage.WebWindowType.WebBrowserBackgroundTab
+        yeni = TarayiciView(self.ana_pencere, self.ana_pencere.profile)
+        self.ana_pencere.yeni_sekme_ekle(view=yeni, aktif=aktif)
         return yeni
 
 
@@ -248,13 +257,13 @@ class AyarlarPenceresi(QDialog):
 
 
 class Tarayici(QMainWindow):
-    def __init__(self):
+    def __init__(self, ayarlar=None, ilk_url: QUrl | None = None):
         super().__init__()
         self.setWindowTitle(f"{UYGULAMA_ADI} v{SURUM}")
         self.resize(1200, 800)
 
         # Kalıcı ayarlar (çerez kararları, pencere konumu, adblock durumu)
-        self.ayarlar = QSettings(UYGULAMA_ADI, UYGULAMA_ADI)
+        self.ayarlar = ayarlar if ayarlar is not None else QSettings(UYGULAMA_ADI, UYGULAMA_ADI)
 
         self.setStyleSheet(
             """
@@ -286,7 +295,12 @@ class Tarayici(QMainWindow):
             QWebEngineProfile.PersistentCookiesPolicy.AllowPersistentCookies
         )
         self.adblocker = AdBlocker()
-        self.adblocker.aktif = bool(self.ayarlar.value("adblock/enabled", True))
+        try:
+            self.adblocker.aktif = bool(
+                self.ayarlar.value("adblock/enabled", True, type=bool)
+            )
+        except Exception:
+            self.adblocker.aktif = bool(self.ayarlar.value("adblock/enabled", True))
         self.profile.setUrlRequestInterceptor(self.adblocker)
         self._adblock_script = None
         self._adblock_script_uygula()
@@ -295,6 +309,8 @@ class Tarayici(QMainWindow):
         self.profile.downloadRequested.connect(self.indirme_isleyicisi)
         self.cookie_store = self.profile.cookieStore()
         self.cerez_yoneticisi = CerezYoneticisi(self.ayarlar)
+        self._cerez_filtresi_cb = self._cerez_filtresi
+        self.cookie_store.setCookieFilter(self._cerez_filtresi_cb)
         self.cookie_store.cookieAdded.connect(self.cerez_eklendi_kontrol)
 
         # Sekmeler
@@ -401,7 +417,9 @@ class Tarayici(QMainWindow):
             pass
 
         # İlk sekme
-        self.yeni_sekme_ekle(QUrl(ANA_SAYFA_URL), "Brave Search")
+        baslangic = ilk_url if ilk_url is not None else QUrl(ANA_SAYFA_URL)
+        baslik = "tbrowser" if ilk_url is not None else "Brave Search"
+        self.yeni_sekme_ekle(baslangic, baslik)
 
     # -- AdBlocker -----------------------------------------------------------
 
@@ -497,8 +515,7 @@ class Tarayici(QMainWindow):
         aktif: bool = True,
     ) -> None:
         if view is None:
-            view = TarayiciView(self)
-            view.setProfile(self.profile)
+            view = TarayiciView(self, self.profile)
             view.setUrl(qurl if qurl is not None else QUrl(ANA_SAYFA_URL))
         elif qurl is not None:
             view.setUrl(qurl)
@@ -523,6 +540,10 @@ class Tarayici(QMainWindow):
         view = self.tabs.widget(i)
         self.tabs.removeTab(i)
         if view is not None:
+            try:
+                view.stop()
+            except Exception:
+                pass
             view.deleteLater()
         if self.tabs.count() == 0:
             self.yeni_sekme_ekle(QUrl(ANA_SAYFA_URL), "Brave Search")
@@ -619,6 +640,15 @@ class Tarayici(QMainWindow):
 
     # -- Çerezler (1.0 düzeltmesi) --------------------------------------------------
 
+    def _cerez_filtresi(self, req) -> bool:
+        try:
+            host = req.origin.host()
+            if self.adblocker.aktif and req.thirdParty and host_engellendi_mi(host):
+                return False
+            return self.cerez_yoneticisi.cerez_filtre_izni(host)
+        except Exception:
+            return True
+
     def cerez_eklendi_kontrol(self, cookie) -> None:
         karar = self.cerez_yoneticisi.cerez_eklendi(cookie, self.cookie_store)
         if karar == KARAR_SOR:
@@ -703,11 +733,21 @@ class Tarayici(QMainWindow):
 
     def indirme_bitti(self, download) -> None:
         try:
-            bitti = download.isFinished()
+            durum = download.state()
+            if durum == QWebEngineDownloadRequest.DownloadState.DownloadCompleted:
+                self.statusBar().showMessage("İndirme tamamlandı!", 5000)
+                return
+            if durum == QWebEngineDownloadRequest.DownloadState.DownloadInterrupted:
+                sebep = download.interruptReasonString() or "Bilinmeyen hata"
+                self.statusBar().showMessage(f"İndirme başarısız: {sebep}", 6000)
+                return
         except Exception:
-            bitti = False
-        if bitti:
-            self.statusBar().showMessage("İndirme tamamlandı!", 5000)
+            pass
+        try:
+            if download.isFinished():
+                self.statusBar().showMessage("İndirme tamamlandı!", 5000)
+        except Exception:
+            pass
 
     # -- Kapanış ------------------------------------------------------------------------
 
@@ -716,15 +756,43 @@ class Tarayici(QMainWindow):
             self.ayarlar.setValue("window/geometry", self.saveGeometry())
         except Exception:
             pass
+        try:
+            self.profile.setUrlRequestInterceptor(None)
+        except Exception:
+            pass
+        try:
+            self.cookie_store.setCookieFilter()
+        except Exception:
+            pass
+        try:
+            self.cookie_store.cookieAdded.disconnect(self.cerez_eklendi_kontrol)
+        except Exception:
+            pass
         super().closeEvent(event)
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    args = sys.argv[1:] if argv is None else argv
+    if "--version" in args:
+        print(f"{UYGULAMA_ADI} {SURUM}")
+        return 0
+
     app = QApplication(sys.argv)
     app.setApplicationName(UYGULAMA_ADI)
     app.setOrganizationName(UYGULAMA_ADI)
     app.setApplicationVersion(SURUM)
     app.setDesktopFileName(UYGULAMA_ADI)
+
+    if "--smoke-test" in args:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            ayar = QSettings(os.path.join(tmp, "smoke.ini"), QSettings.Format.IniFormat)
+            window = Tarayici(ayarlar=ayar, ilk_url=QUrl("about:blank"))
+            window.show()
+            app.processEvents()
+            window.close()
+        return 0
 
     window = Tarayici()
     window.show()

@@ -3,18 +3,18 @@
 
 Kullanım:  pyinstaller tbrowser.spec --noconfirm
 Çıktı:     dist/tbrowser/ (klasör) — dağıtımda zip'lenir.
+
+Not: PyInstaller'ın yerleşik PyQt6 ve QtWebEngineCore hook'ları
+gerekli Qt6 DLL/SO/framework dosyalarını, QtWebEngineProcess
+yardımcısını ve kaynak paketlerini otomatik toplar.
 """
-
-from PyInstaller.utils.hooks import collect_all
-
-datas, binaries, hiddenimports = collect_all("PyQt6")
 
 a = Analysis(
     ["tbrowser.py"],
-    pathex=[],
-    binaries=binaries,
-    datas=datas,
-    hiddenimports=hiddenimports,
+    pathex=["."],
+    binaries=[],
+    datas=[],
+    hiddenimports=["tbrowser_core"],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

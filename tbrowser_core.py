@@ -12,7 +12,9 @@ Sürüm: 1.0.0
 
 from __future__ import annotations
 
+import json
 import re
+import threading
 from collections import deque
 from typing import Iterable, Optional
 from urllib.parse import quote_plus
@@ -301,6 +303,7 @@ class CerezYoneticisi:
     """
 
     def __init__(self, ayarlar=None):
+        self._kilit = threading.RLock()
         self.ayarlar = ayarlar
         self.izin_verilen: set[str] = set()
         self.engellenen: set[str] = set()
@@ -314,27 +317,51 @@ class CerezYoneticisi:
 
     # -- kalıcılık ---------------------------------------------------------
 
+    @staticmethod
+    def _liste_coz(deger) -> set[str]:
+        if deger is None:
+            return set()
+        if isinstance(deger, str):
+            s = deger.strip()
+            if not s:
+                return set()
+            if s.startswith("["):
+                try:
+                    deger = json.loads(s)
+                except Exception:
+                    return {domain_normalize(s)} if domain_normalize(s) else set()
+            else:
+                return {domain_normalize(s)} if domain_normalize(s) else set()
+        if isinstance(deger, (list, tuple, set, frozenset)):
+            return {domain_normalize(d) for d in deger if domain_normalize(d)}
+        return set()
+
     def _yukle(self) -> None:
         if self.ayarlar is None:
             return
         try:
-            izin = self.ayarlar.value("cookies/allowed", []) or []
-            engel = self.ayarlar.value("cookies/blocked", []) or []
+            izin = self.ayarlar.value("cookies/allowed", "[]")
+            engel = self.ayarlar.value("cookies/blocked", "[]")
             politika = self.ayarlar.value("cookies/policy", POLITIKA_SOR) or POLITIKA_SOR
         except Exception:
             return
-        self.izin_verilen = {domain_normalize(d) for d in izin if domain_normalize(d)}
-        self.engellenen = {domain_normalize(d) for d in engel if domain_normalize(d)}
-        if politika in GECERLI_POLITIKALAR:
-            self.varsayilan_politika = politika
+        with self._kilit:
+            self.izin_verilen = self._liste_coz(izin)
+            self.engellenen = self._liste_coz(engel)
+            if politika in GECERLI_POLITIKALAR:
+                self.varsayilan_politika = politika
 
     def _kaydet(self) -> None:
         if self.ayarlar is None:
             return
         try:
-            self.ayarlar.setValue("cookies/allowed", sorted(self.izin_verilen))
-            self.ayarlar.setValue("cookies/blocked", sorted(self.engellenen))
-            self.ayarlar.setValue("cookies/policy", self.varsayilan_politika)
+            with self._kilit:
+                izin = json.dumps(sorted(self.izin_verilen))
+                engel = json.dumps(sorted(self.engellenen))
+                politika = self.varsayilan_politika
+            self.ayarlar.setValue("cookies/allowed", izin)
+            self.ayarlar.setValue("cookies/blocked", engel)
+            self.ayarlar.setValue("cookies/policy", politika)
         except Exception:
             pass
 
@@ -342,11 +369,29 @@ class CerezYoneticisi:
 
     def karar(self, domain: str | None) -> str:
         """Domain için güncel kararı döner ("izin" | "engelle" | "sor")."""
-        if self.varsayilan_politika == POLITIKA_IZIN_VER:
-            return KARAR_IZIN
-        if self.varsayilan_politika == POLITIKA_ENGELLE:
-            return KARAR_ENGELLE
-        return domain_karari(domain, self.izin_verilen, self.engellenen)
+        with self._kilit:
+            if self.varsayilan_politika == POLITIKA_IZIN_VER:
+                return KARAR_IZIN
+            if self.varsayilan_politika == POLITIKA_ENGELLE:
+                return KARAR_ENGELLE
+            return domain_karari(domain, self.izin_verilen, self.engellenen)
+
+    def cerez_filtre_izni(self, origin_host: str | None) -> bool:
+        """QWebEngineCookieStore.setCookieFilter için ön eleme kararı.
+
+        Her zaman engelli sitelerin veya "Her zaman engelle" politikasının
+        çerezlerini depolamaya girmeden reddeder; "sor" veya "izin" için
+        True döner (böylece yeni sitelerde kullanıcıya sorulabilir).
+        """
+        with self._kilit:
+            if self.varsayilan_politika == POLITIKA_ENGELLE:
+                return False
+            if self.varsayilan_politika == POLITIKA_IZIN_VER:
+                return True
+            d = domain_normalize(origin_host)
+            if not d:
+                return True
+            return domain_karari(d, self.izin_verilen, self.engellenen) != KARAR_ENGELLE
 
     # -- cookieAdded akışı ---------------------------------------------------
 
@@ -362,87 +407,95 @@ class CerezYoneticisi:
             # Host-only çerez: domain bilinmiyor, sessiz izin ver.
             return KARAR_IZIN
 
-        k = self.karar(domain)
-        if k == KARAR_IZIN:
-            return KARAR_IZIN
-        if k == KARAR_ENGELLE:
-            try:
-                cookie_store.deleteCookie(cookie)
-            except Exception:
-                pass
-            return KARAR_ENGELLE
+        with self._kilit:
+            k = self.karar(domain)
+            if k == KARAR_IZIN:
+                return KARAR_IZIN
+            if k == KARAR_ENGELLE:
+                try:
+                    cookie_store.deleteCookie(cookie)
+                except Exception:
+                    pass
+                return KARAR_ENGELLE
 
-        # Soru gerekli: kuyruğa ekle
-        self.bekleyen.setdefault(domain, []).append(cookie)
-        if domain != self.su_anki_domain and domain not in self.kuyruk:
-            self.kuyruk.append(domain)
-        return KARAR_SOR
+            # Soru gerekli: kuyruğa ekle
+            self.bekleyen.setdefault(domain, []).append(cookie)
+            if domain != self.su_anki_domain and domain not in self.kuyruk:
+                self.kuyruk.append(domain)
+            return KARAR_SOR
 
     def sıradaki(self) -> Optional[str]:
         """Sıradaki sorulacak domaini aktif yapar (yoksa None)."""
-        if self.su_anki_domain is not None:
-            return self.su_anki_domain
-        while self.kuyruk:
-            d = self.kuyruk.popleft()
-            if self.karar(d) != KARAR_SOR:
-                # Karar bu arada değişmiş (politika/liste); soruyu atla.
-                self.bekleyen.pop(d, None)
-                continue
-            self.su_anki_domain = d
-            return d
-        return None
+        with self._kilit:
+            if self.su_anki_domain is not None:
+                return self.su_anki_domain
+            while self.kuyruk:
+                d = self.kuyruk.popleft()
+                if self.karar(d) != KARAR_SOR:
+                    # Karar bu arada değişmiş (politika/liste); soruyu atla.
+                    self.bekleyen.pop(d, None)
+                    continue
+                self.su_anki_domain = d
+                return d
+            return None
 
     def izin_ver(self) -> Optional[str]:
         """Aktif domain için izin verir, sıradakini döner."""
-        if self.su_anki_domain:
-            self.izin_verilen.add(self.su_anki_domain)
-            self.engellenen.discard(self.su_anki_domain)
-            self.bekleyen.pop(self.su_anki_domain, None)
-            self._kaydet()
-            self.su_anki_domain = None
-        return self.sıradaki()
+        with self._kilit:
+            if self.su_anki_domain:
+                self.izin_verilen.add(self.su_anki_domain)
+                self.engellenen.discard(self.su_anki_domain)
+                self.bekleyen.pop(self.su_anki_domain, None)
+                self._kaydet()
+                self.su_anki_domain = None
+            return self.sıradaki()
 
     def reddet(self, cookie_store) -> Optional[str]:
         """Aktif domainin çerezlerini siler, engeller, sıradakini döner."""
-        if self.su_anki_domain:
-            self.engellenen.add(self.su_anki_domain)
-            self.izin_verilen.discard(self.su_anki_domain)
-            for c in self.bekleyen.pop(self.su_anki_domain, []):
-                try:
-                    cookie_store.deleteCookie(c)
-                except Exception:
-                    pass
-            self._kaydet()
-            self.su_anki_domain = None
-        return self.sıradaki()
+        with self._kilit:
+            if self.su_anki_domain:
+                self.engellenen.add(self.su_anki_domain)
+                self.izin_verilen.discard(self.su_anki_domain)
+                for c in self.bekleyen.pop(self.su_anki_domain, []):
+                    try:
+                        cookie_store.deleteCookie(c)
+                    except Exception:
+                        pass
+                self._kaydet()
+                self.su_anki_domain = None
+            return self.sıradaki()
 
     # -- yardımcılar ---------------------------------------------------------
 
     def bekleyen_sayisi(self, domain: Optional[str] = None) -> int:
-        if domain is not None:
-            return len(self.bekleyen.get(domain_normalize(domain), []))
-        return sum(len(v) for v in self.bekleyen.values())
+        with self._kilit:
+            if domain is not None:
+                return len(self.bekleyen.get(domain_normalize(domain), []))
+            return sum(len(v) for v in self.bekleyen.values())
 
     def bekleyen_domain_sayisi(self) -> int:
-        return len(self.bekleyen)
+        with self._kilit:
+            return len(self.bekleyen)
 
     def politika_ayarla(self, politika: str) -> None:
         if politika not in GECERLI_POLITIKALAR:
             raise ValueError(f"Geçersiz çerez politikası: {politika!r}")
-        self.varsayilan_politika = politika
-        self._kaydet()
+        with self._kilit:
+            self.varsayilan_politika = politika
+            self._kaydet()
 
     def bekleyenleri_temizle(self, cookie_store) -> None:
         """Kuyruktaki tüm bekleyen çerezleri siler (politika değişiminde)."""
-        for cookies in self.bekleyen.values():
-            for c in cookies:
-                try:
-                    cookie_store.deleteCookie(c)
-                except Exception:
-                    pass
-        self.bekleyen.clear()
-        self.kuyruk.clear()
-        self.su_anki_domain = None
+        with self._kilit:
+            for cookies in self.bekleyen.values():
+                for c in cookies:
+                    try:
+                        cookie_store.deleteCookie(c)
+                    except Exception:
+                        pass
+            self.bekleyen.clear()
+            self.kuyruk.clear()
+            self.su_anki_domain = None
 
     def kuyrugu_bosalt(self) -> None:
         """Bekleyen çerezleri silmeden soru kuyruğunu boşaltır.
@@ -450,15 +503,17 @@ class CerezYoneticisi:
         Politika "her zaman izin ver"e çevrildiğinde kullanılır:
         bekleyen çerezler zaten izinli sayılır, silinmez.
         """
-        self.bekleyen.clear()
-        self.kuyruk.clear()
-        self.su_anki_domain = None
+        with self._kilit:
+            self.bekleyen.clear()
+            self.kuyruk.clear()
+            self.su_anki_domain = None
 
     def temizle(self) -> None:
         """İzin/engel listelerini ve bekleyenleri sıfırlar."""
-        self.izin_verilen.clear()
-        self.engellenen.clear()
-        self.bekleyen.clear()
-        self.kuyruk.clear()
-        self.su_anki_domain = None
-        self._kaydet()
+        with self._kilit:
+            self.izin_verilen.clear()
+            self.engellenen.clear()
+            self.bekleyen.clear()
+            self.kuyruk.clear()
+            self.su_anki_domain = None
+            self._kaydet()
