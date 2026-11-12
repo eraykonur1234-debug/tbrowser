@@ -12,6 +12,9 @@ permissions:
   issues: write
   pull-requests: write
 
+env:
+  PYTHONUTF8: "1"
+
 jobs:
   test:
     name: Testler (Ubuntu)
