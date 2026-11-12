@@ -1,0 +1,7 @@
+# tbrowser 1.0.0 — çalışma zamanı bağımlılıkları
+PyQt6>=6.6,<7
+PyQt6-WebEngine>=6.6,<7
+PyQt6-sip>=13.6
+
+# Derleme (PyInstaller) — yalnızca .exe/.app derlerken gerekli
+pyinstaller>=6.0

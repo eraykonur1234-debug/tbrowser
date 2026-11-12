@@ -1,0 +1,138 @@
+name: Test ve Derleme
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  test:
+    name: Testler (Ubuntu)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Qt sistem kütüphaneleri
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgl1 libgl1-mesa-dri libegl1 libxkbcommon-x11-0 libxkbcommon0 libxkbfile1 \
+            libnss3 libnspr4 libgbm1 libasound2 libxcomposite1 libxdamage1 libxrandr2 \
+            libxfixes3 libpango-1.0-0 libcairo2 libx11-xcb1 libdbus-1-3 libxi6 libxtst6 \
+            libxcursor1 libatk1.0-0 libatk-bridge2.0-0 libcups2 libxrender1 \
+            libxcb-cursor0 libxcb-dri3-0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+            libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 xvfb
+      - name: Bağımlılıklar
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest
+      - name: Testleri çalıştır
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QT_OPENGL: software
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          QTWEBENGINE_DISABLE_SANDBOX: "1"
+          QTWEBENGINE_CHROMIUM_FLAGS: "--no-sandbox --disable-gpu"
+        run: |
+          python -m pytest tests/ -v -s --tb=short
+          python tbrowser.py --version
+          python tbrowser.py --smoke-test
+      - name: Hata çıktısını PR'a yorum olarak ekle
+        if: failure() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          QT_QPA_PLATFORM: offscreen
+          QT_OPENGL: software
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          QTWEBENGINE_DISABLE_SANDBOX: "1"
+          QTWEBENGINE_CHROMIUM_FLAGS: "--no-sandbox --disable-gpu"
+        run: |
+          {
+            echo "=== pytest -s ==="
+            python -m pytest tests/ -v -s --tb=long 2>&1 || true
+            echo "=== smoke-test ==="
+            python tbrowser.py --smoke-test 2>&1 || true
+            echo "=== ldd QtWebEngineProcess ==="
+            python -c "import PyQt6, pathlib; p = pathlib.Path(PyQt6.__file__).parent / 'Qt6/libexec/QtWebEngineProcess'; print(p)" | xargs ldd 2>&1 | grep "not found" || echo "none missing"
+          } > pytest-cikti.txt
+          {
+            echo "### CI test çıktısı (hata ayıklama)"
+            echo '```'
+            tail -n 120 pytest-cikti.txt
+            echo '```'
+          } > yorum.md
+          gh pr comment ${{ github.event.pull_request.number }} --body-file yorum.md || true
+
+  build:
+    name: Derle (${{ matrix.os }})
+    needs: test
+    if: github.event_name != 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-22.04, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Qt sistem kütüphaneleri (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgl1 libgl1-mesa-dri libegl1 libxkbcommon-x11-0 libxkbcommon0 libxkbfile1 \
+            libnss3 libnspr4 libgbm1 libasound2 libxcomposite1 libxdamage1 libxrandr2 \
+            libxfixes3 libpango-1.0-0 libcairo2 libx11-xcb1 libdbus-1-3 libxi6 libxtst6 \
+            libxcursor1 libatk1.0-0 libatk-bridge2.0-0 libcups2 libxrender1 \
+            libxcb-cursor0 libxcb-dri3-0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+            libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0
+      - name: Bağımlılıklar
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Derle (PyInstaller)
+        run: python build.py --clean
+      - name: Derlenen ikiliyi doğrula (Unix)
+        if: runner.os != 'Windows'
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QT_OPENGL: software
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          QTWEBENGINE_DISABLE_SANDBOX: "1"
+          QTWEBENGINE_CHROMIUM_FLAGS: "--no-sandbox --disable-gpu"
+        run: |
+          ./dist/tbrowser/tbrowser --version
+          ./dist/tbrowser/tbrowser --smoke-test
+      - name: Derlenen ikiliyi doğrula (Windows)
+        if: runner.os == 'Windows'
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QT_OPENGL: software
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          QTWEBENGINE_DISABLE_SANDBOX: "1"
+          QTWEBENGINE_CHROMIUM_FLAGS: "--no-sandbox --disable-gpu"
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath ".\dist\tbrowser\tbrowser.exe" -ArgumentList "--smoke-test" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { exit $p.ExitCode }
+      - name: Paketi yükle (artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: tbrowser-${{ matrix.os }}
+          path: release/*.zip
+      - name: Release'e ekle (etiketli sürümde)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*.zip
