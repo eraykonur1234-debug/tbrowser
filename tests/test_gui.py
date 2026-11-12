@@ -25,10 +25,12 @@ def _gui_yukle():
 
 def test_gui_pencere_ve_cerez_akisi(tmp_path):
     tbrowser = _gui_yukle()
-    from PyQt6.QtCore import QSettings, QUrl
+    from PyQt6.QtCore import QSettings, QUrl, Qt
     from PyQt6.QtNetwork import QNetworkCookie
     from PyQt6.QtWidgets import QApplication
 
+    if QApplication.instance() is None:
+        QApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts)
     app = QApplication.instance() or QApplication([])
     ayar_dosyasi = str(tmp_path / "ayarlar.ini")
     ayarlar = QSettings(ayar_dosyasi, QSettings.Format.IniFormat)

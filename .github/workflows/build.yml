@@ -25,12 +25,12 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            libgl1 libegl1 libxkbcommon-x11-0 libxkbcommon0 libnss3 libgbm1 \
-            libasound2 libxcomposite1 libxdamage1 libxrandr2 libxfixes3 \
-            libpango-1.0-0 libcairo2 libx11-xcb1 libdbus-1-3 libxi6 libxtst6 \
+            libgl1 libgl1-mesa-dri libegl1 libxkbcommon-x11-0 libxkbcommon0 libxkbfile1 \
+            libnss3 libnspr4 libgbm1 libasound2 libxcomposite1 libxdamage1 libxrandr2 \
+            libxfixes3 libpango-1.0-0 libcairo2 libx11-xcb1 libdbus-1-3 libxi6 libxtst6 \
             libxcursor1 libatk1.0-0 libatk-bridge2.0-0 libcups2 libxrender1 \
-            libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 \
-            libxcb-render-util0 libxcb-shape0 libxcb-xinerama0
+            libxcb-cursor0 libxcb-dri3-0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+            libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 xvfb
       - name: Bağımlılıklar
         run: |
           python -m pip install --upgrade pip
@@ -38,10 +38,12 @@ jobs:
       - name: Testleri çalıştır
         env:
           QT_QPA_PLATFORM: offscreen
+          QT_OPENGL: software
+          LIBGL_ALWAYS_SOFTWARE: "1"
           QTWEBENGINE_DISABLE_SANDBOX: "1"
           QTWEBENGINE_CHROMIUM_FLAGS: "--no-sandbox --disable-gpu"
         run: |
-          python -m pytest tests/ -v --tb=short
+          python -m pytest tests/ -v -s --tb=short
           python tbrowser.py --version
           python tbrowser.py --smoke-test
       - name: Hata çıktısını PR'a yorum olarak ekle
@@ -49,10 +51,19 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           QT_QPA_PLATFORM: offscreen
+          QT_OPENGL: software
+          LIBGL_ALWAYS_SOFTWARE: "1"
           QTWEBENGINE_DISABLE_SANDBOX: "1"
           QTWEBENGINE_CHROMIUM_FLAGS: "--no-sandbox --disable-gpu"
         run: |
-          python -m pytest tests/ -v --tb=long > pytest-cikti.txt 2>&1 || true
+          {
+            echo "=== pytest -s ==="
+            python -m pytest tests/ -v -s --tb=long 2>&1 || true
+            echo "=== smoke-test ==="
+            python tbrowser.py --smoke-test 2>&1 || true
+            echo "=== ldd QtWebEngineProcess ==="
+            python -c "import PyQt6, pathlib; p = pathlib.Path(PyQt6.__file__).parent / 'Qt6/libexec/QtWebEngineProcess'; print(p)" | xargs ldd 2>&1 | grep "not found" || echo "none missing"
+          } > pytest-cikti.txt
           {
             echo "### CI test çıktısı (hata ayıklama)"
             echo '```'
@@ -80,12 +91,12 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            libgl1 libegl1 libxkbcommon-x11-0 libxkbcommon0 libnss3 libgbm1 \
-            libasound2 libxcomposite1 libxdamage1 libxrandr2 libxfixes3 \
-            libpango-1.0-0 libcairo2 libx11-xcb1 libdbus-1-3 libxi6 libxtst6 \
+            libgl1 libgl1-mesa-dri libegl1 libxkbcommon-x11-0 libxkbcommon0 libxkbfile1 \
+            libnss3 libnspr4 libgbm1 libasound2 libxcomposite1 libxdamage1 libxrandr2 \
+            libxfixes3 libpango-1.0-0 libcairo2 libx11-xcb1 libdbus-1-3 libxi6 libxtst6 \
             libxcursor1 libatk1.0-0 libatk-bridge2.0-0 libcups2 libxrender1 \
-            libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 \
-            libxcb-render-util0 libxcb-shape0 libxcb-xinerama0
+            libxcb-cursor0 libxcb-dri3-0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+            libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0
       - name: Bağımlılıklar
         run: |
           python -m pip install --upgrade pip
@@ -96,6 +107,8 @@ jobs:
         if: runner.os != 'Windows'
         env:
           QT_QPA_PLATFORM: offscreen
+          QT_OPENGL: software
+          LIBGL_ALWAYS_SOFTWARE: "1"
           QTWEBENGINE_DISABLE_SANDBOX: "1"
           QTWEBENGINE_CHROMIUM_FLAGS: "--no-sandbox --disable-gpu"
         run: |
@@ -105,6 +118,8 @@ jobs:
         if: runner.os == 'Windows'
         env:
           QT_QPA_PLATFORM: offscreen
+          QT_OPENGL: software
+          LIBGL_ALWAYS_SOFTWARE: "1"
           QTWEBENGINE_DISABLE_SANDBOX: "1"
           QTWEBENGINE_CHROMIUM_FLAGS: "--no-sandbox --disable-gpu"
         shell: pwsh

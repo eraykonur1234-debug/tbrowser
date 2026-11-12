@@ -777,6 +777,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{UYGULAMA_ADI} {SURUM}")
         return 0
 
+    QApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts)
     app = QApplication(sys.argv)
     app.setApplicationName(UYGULAMA_ADI)
     app.setOrganizationName(UYGULAMA_ADI)
